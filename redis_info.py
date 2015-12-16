@@ -77,11 +77,11 @@ def fetch_info( conf ):
 
     content_length = int(status_line[1:-1]) # status_line looks like: $<content_length>
     data = fp.read(content_length)
-    log_verbose('Received data: %s' % data)
+    log_verbose('Received data: %s of length %d' % (data, content_length))
     s.close()
 
-    linesep = '\r\n' if '\r\n' in data else '\n'
-    return parse_info(data.split(linesep))
+    #linesep = '\r\n' if '\r\n' in data else '\n'
+    return parse_info(data.splitlines())
 
 
 def parse_info(info_lines):
@@ -92,11 +92,14 @@ def parse_info(info_lines):
             continue
 
         if ':' not in line:
-            collectd.warning('redis_info plugin: Bad format for info line: %s'
-                             % line)
+	    collectd.warning('redis_info plugin: Bad format for info line: %s' % line)
             continue
-
-        key, val = line.split(':')
+	items = line.split(':');
+	if len(items) == 2:
+            key, val = items
+        else:
+           key = items[0]
+           val = items[1] + ":" + items[2]
 
         # Handle multi-value keys (for dbs and slaves).
         # db lines look like "db0:keys=10,expire=0"
@@ -153,6 +156,9 @@ def configure_callback(conf):
 
 def dispatch_value(info, key, type, plugin_instance=None, type_instance=None):
     """Read a key from info response data and dispatch a value"""
+    
+    log_verbose('in dispatch value')
+
     if key not in info:
         collectd.warning('redis_info plugin: Info key not found: %s' % key)
         return
@@ -167,7 +173,12 @@ def dispatch_value(info, key, type, plugin_instance=None, type_instance=None):
     try:
         value = int(info[key])
     except ValueError:
+        log_verbose('in valueError %s' %info[key])
+	log_verbose(repr(info[key]))
         value = float(info[key])
+        log_verbose('after handling exception')
+    except TypeError:
+	value = int(0)
 
     log_verbose('Sending value: %s=%s' % (type_instance, value))
 
@@ -194,7 +205,7 @@ def get_metrics( conf ):
         plugin_instance = '{host}:{port}'.format(host=conf['host'], port=conf['port'])
 
     for key, val in REDIS_INFO.iteritems():
-        #log_verbose('key: %s - value: %s' % (key, val))
+        log_verbose('key: %s - value: %s' % (key, val))
         if key == 'total_connections_received':
             dispatch_value(info, 'total_connections_received', 'counter', plugin_instance, 'connections_received')
         elif key == 'total_commands_processed':
